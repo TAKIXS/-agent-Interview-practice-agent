@@ -1,17 +1,9 @@
-"""LangChain 面试辅导 Agent — Streamlit 入口。
-
-提供：
-- 侧边栏：模型选择（Anthropic / OpenAI / 自定义 API） + 温度调节
-- 首页：四大功能入口 + 快速提问
-- 全局 session_state 初始化
-"""
+"""LangChain 面试辅导 Agent — Apple 极简风格首页。"""
 
 import streamlit as st
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
-# --- 环境 & 日志 ---
 load_dotenv()
 from src.utils.logging_config import setup_logging
 from src.utils.session import init_session_state
@@ -19,243 +11,222 @@ from config.settings import settings
 
 setup_logging(settings.log_level)
 settings.ensure_dirs()
+init_session_state()
+
+from src.llm.manager import ModelManager
+
+if st.session_state.model_manager is None:
+    st.session_state.model_manager = ModelManager()
+mgr: ModelManager = st.session_state.model_manager
 
 # ============================================================================
 # 页面配置
 # ============================================================================
 st.set_page_config(
-    page_title="LangChain 面试辅导 Agent",
-    page_icon="🤖",
+    page_title="Interview Coach",
+    page_icon="◈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ============================================================================
-# Session State 初始化
+# Apple 极简 CSS
 # ============================================================================
-init_session_state()
+st.html("""
+<style>
+/* 全局 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+* { font-family: 'Inter', -apple-system, sans-serif; }
 
-from src.llm.manager import ModelManager
+/* 隐藏 Streamlit 默认元素 */
+#MainMenu, footer, .stDeployButton { display: none; }
+header[data-testid="stHeader"] { background: transparent; }
 
-# ModelManager 单例（缓存）
-if st.session_state.model_manager is None:
-    st.session_state.model_manager = ModelManager()
+/* 主容器 */
+.main .block-container {
+    max-width: 960px;
+    padding-top: 3rem;
+}
 
-mgr: ModelManager = st.session_state.model_manager
+/* 标题 */
+h1 { font-size: 3rem !important; font-weight: 700 !important; letter-spacing: -0.02em; color: #1D1D1F; }
+h2 { font-size: 1.75rem !important; font-weight: 600 !important; color: #1D1D1F; }
+h3 { font-size: 1.25rem !important; font-weight: 600 !important; color: #1D1D1F; }
 
+/* 卡片 */
+.apple-card {
+    background: #FFFFFF;
+    border-radius: 16px;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    border: 1px solid #E8E8ED;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    height: 100%;
+}
+.apple-card:hover {
+    border-color: #D1D1D6;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+
+/* 侧边栏 */
+[data-testid="stSidebar"] {
+    background: #F5F5F7;
+    border-right: 1px solid #E8E8ED;
+}
+[data-testid="stSidebar"] .stMarkdown h2 {
+    font-size: 1rem !important;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #86868B;
+}
+
+/* 按钮 */
+.stButton > button {
+    background: #0071E3;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 0.6rem 1.5rem;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+}
+.stButton > button:hover {
+    background: #0077ED;
+    box-shadow: 0 2px 8px rgba(0,113,227,0.2);
+}
+
+/* 输入框 */
+.stTextInput > div > div > input {
+    border-radius: 10px;
+    border: 1px solid #D1D1D6;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+}
+
+/* 选择框 */
+.stSelectbox > div > div {
+    border-radius: 10px;
+}
+
+/* 分割线 */
+hr {
+    border-color: #E8E8ED;
+    margin: 2rem 0;
+}
+
+/* 右键消息 */
+.stChatMessage {
+    border-radius: 12px;
+    padding: 0.5rem 0;
+}
+
+/* Charts 进度条 */
+.stProgress > div > div {
+    background: #0071E3;
+}
+</style>
+""")
 
 # ============================================================================
-# 辅助函数
+# 侧边栏
 # ============================================================================
-
-def check_api_keys() -> dict[str, bool]:
-    """检查主要 provider 的 API Key 是否已配置。"""
-    return {
-        "通义千问": bool(os.getenv("DASHSCOPE_API_KEY", "")),
-        "DeepSeek": bool(os.getenv("DEEPSEEK_API_KEY", "")),
-        "Anthropic": bool(os.getenv("ANTHROPIC_API_KEY", "")),
-    }
-
-
-# ============================================================================
-# 侧边栏 — 模型配置
-# ============================================================================
-
-st.sidebar.title("⚙️ 模型配置")
-
-# --- API Key 状态指示 ---
-st.sidebar.markdown("### 🔑 API Key 状态")
-keys = check_api_keys()
-for name, configured in keys.items():
-    icon = "🟢" if configured else "🔴"
-    st.sidebar.markdown(f"{icon} **{name}**")
-
-if not any(keys.values()):
-    st.sidebar.warning("请先在 .env 中配置 API Key（千问 / DeepSeek / Anthropic）")
-
-# --- Provider 选择 ---
-st.sidebar.markdown("### 🤖 模型选择")
-providers = mgr.list_providers()
-provider_names = [p["name"] for p in providers]
-provider_keys = [p["key"] for p in providers]
-
-# 恢复已保存的选择
-saved_provider = st.session_state.current_provider or mgr.current_provider
-try:
-    provider_idx = provider_keys.index(saved_provider)
-except ValueError:
-    provider_idx = 0
-
-selected_provider_name = st.sidebar.selectbox(
-    "Provider",
-    provider_names,
-    index=provider_idx,
-    key="provider_selector",
-)
-selected_provider_key = provider_keys[provider_names.index(selected_provider_name)]
-st.session_state.current_provider = selected_provider_key
-
-# --- Model 选择（仅 anthropic / openai 显示下拉） ---
-if selected_provider_key != "custom":
-    models = mgr.list_models_for_provider(selected_provider_key)
-    model_names = [m["name"] for m in models] if models else []
-    model_ids = [m["id"] for m in models] if models else []
-
-    saved_model = st.session_state.current_model or mgr.current_model
+with st.sidebar:
+    st.markdown("## 模型")
+    providers = mgr.list_providers()
+    provider_names = [p["name"] for p in providers]
+    provider_keys = [p["key"] for p in providers]
+    saved = st.session_state.current_provider or mgr.current_provider
     try:
-        model_idx = model_ids.index(saved_model)
+        idx = provider_keys.index(saved)
     except ValueError:
-        model_idx = 0
+        idx = 0
 
-    if model_names:
-        selected_model_name = st.sidebar.selectbox(
-            "Model",
-            model_names,
-            index=model_idx,
-            key="model_selector",
-        )
-        st.session_state.current_model = model_ids[model_names.index(selected_model_name)]
-    else:
-        st.sidebar.warning("无可用模型")
-else:
-    # Custom provider：用户输入
-    st.sidebar.markdown("#### 自定义 API 配置")
-    config_fields = mgr.get_provider_config_fields("custom")
-    for field in config_fields:
-        value = st.sidebar.text_input(
-            field["label"],
-            type=field.get("type", "text"),
-            placeholder=field.get("placeholder", ""),
-            key=f"custom_{field['name']}",
-        )
-        if field["name"] == "base_url":
-            st.session_state.custom_base_url = value
-        elif field["name"] == "api_key":
-            st.session_state.custom_api_key = value
-        elif field["name"] == "model_name":
-            st.session_state.custom_model_name = value
-    st.session_state.current_model = st.session_state.custom_model_name or ""
+    selected_name = st.selectbox("Provider", provider_names, index=idx, label_visibility="collapsed")
+    selected_key = provider_keys[provider_names.index(selected_name)]
+    st.session_state.current_provider = selected_key
 
-# --- 温度 ---
-st.session_state.current_temperature = st.sidebar.slider(
-    "Temperature",
-    min_value=0.0,
-    max_value=2.0,
-    value=0.7,
-    step=0.1,
-    key="temperature_slider",
+    if selected_key != "custom":
+        models = mgr.list_models_for_provider(selected_key)
+        if models:
+            model_names = [m["name"] for m in models]
+            model_ids = [m["id"] for m in models]
+            st.session_state.current_model = model_ids[model_names.index(
+                st.selectbox("Model", model_names, index=0, label_visibility="collapsed")
+            )]
+
+    st.divider()
+
+    # API Key 状态
+    keys = {
+        "DeepSeek": bool(os.getenv("DEEPSEEK_API_KEY")),
+        "千问": bool(os.getenv("DASHSCOPE_API_KEY")),
+    }
+    for name, ok in keys.items():
+        st.markdown(f"{'●' if ok else '○'} {name}")
+
+    if st.button("应用配置", use_container_width=True):
+        mgr.switch_model(selected_key, st.session_state.current_model, 0.7)
+        st.success("已更新")
+
+
+# ============================================================================
+# 首页
+# ============================================================================
+
+st.html('<div style="height: 2rem"></div>')
+
+st.title("Interview Coach")
+st.html(
+    '<p style="font-size:1.25rem;color:#86868B;margin-top:-0.5rem;margin-bottom:3rem;font-weight:400">'
+    'AI 驱动的技术面试辅导 — 简洁、专注、高效'
+    '</p>'
 )
 
-# --- 应用配置 ---
-if st.sidebar.button("🔄 应用配置"):
-    if selected_provider_key == "custom":
-        mgr.switch_model(
-            provider="custom",
-            model_id=st.session_state.current_model,
-            temperature=st.session_state.current_temperature,
-            base_url=st.session_state.custom_base_url or "",
-            api_key=st.session_state.custom_api_key or "",
-        )
-    else:
-        mgr.switch_model(
-            provider=selected_provider_key,
-            model_id=st.session_state.current_model,
-            temperature=st.session_state.current_temperature,
-        )
-    st.sidebar.success(f"✅ 已切换到 {selected_provider_name} / {st.session_state.current_model}")
+# 四张功能卡片
+cols = st.columns(4)
 
-st.sidebar.divider()
-st.sidebar.caption("LangChain 面试辅导 Agent v0.1.0")
+cards = [
+    ("Q&A", "知识问答", "基于 RAG 的智能问答\n覆盖 Java + Agent", "pages/01_Knowledge_QA.py"),
+    ("Interview", "模拟面试", "AI 面试官出题\n专业打分与反馈", "pages/02_Mock_Interview.py"),
+    ("Code", "代码实战", "在线编写与执行\nAI 代码评审", "pages/03_Code_Practice.py"),
+    ("Quiz", "知识测验", "自动出题\n逐题评分与报告", "pages/04_Knowledge_Quiz.py"),
+]
 
-
-# ============================================================================
-# 首页内容
-# ============================================================================
-
-# 标题区
-col_title, col_status = st.columns([3, 1])
-with col_title:
-    st.title("🤖 LangChain 面试辅导 Agent")
-    st.markdown("全方位准备 LangChain 技术面试 — 从概念理解到代码实战")
-
-with col_status:
-    provider_display = selected_provider_name
-    model_display = st.session_state.current_model or "(未选择)"
-    st.metric("当前模型", f"{provider_display} / {model_display}")
+for col, (icon, title, desc, page) in zip(cols, cards):
+    with col:
+        st.html(f"""
+        <a href="{page}" style="text-decoration:none;color:inherit">
+        <div class="apple-card">
+            <div style="font-size:2rem;margin-bottom:0.75rem">{icon}</div>
+            <div style="font-size:1.1rem;font-weight:600;color:#1D1D1F;margin-bottom:0.5rem">{title}</div>
+            <div style="font-size:0.9rem;color:#86868B;line-height:1.5;white-space:pre-line">{desc}</div>
+        </div>
+        </a>
+        """)
 
 st.divider()
 
-# 功能卡片
-st.markdown("### 🚀 选择学习模式")
+# 快捷输入
+st.html('<p style="font-size:0.85rem;font-weight:600;color:#86868B;letter-spacing:0.04em;margin-bottom:0.5rem">QUICK START</p>')
 
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown("""
-    <div style="background:#f0f4ff; padding:20px; border-radius:10px; text-align:center;">
-        <h2>💬</h2>
-        <h3>知识问答</h3>
-        <p>基于 RAG 的智能问答，覆盖 LangChain 全栈知识点</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.page_link("pages/01_Knowledge_QA.py", label="进入知识问答 →")
-
-with col2:
-    st.markdown("""
-    <div style="background:#fff8f0; padding:20px; border-radius:10px; text-align:center;">
-        <h2>🎤</h2>
-        <h3>模拟面试</h3>
-        <p>真实面试体验，AI 面试官出题 + 打分 + 反馈</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.page_link("pages/02_Mock_Interview.py", label="进入模拟面试 →")
-
-with col3:
-    st.markdown("""
-    <div style="background:#f0fff4; padding:20px; border-radius:10px; text-align:center;">
-        <h2>💻</h2>
-        <h3>代码实战</h3>
-        <p>动手写代码，在线执行 + AI 评审 + 迭代改进</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.page_link("pages/03_Code_Practice.py", label="进入代码实战 →")
-
-with col4:
-    st.markdown("""
-    <div style="background:#fff0f4; padding:20px; border-radius:10px; text-align:center;">
-        <h2>📝</h2>
-        <h3>知识测验</h3>
-        <p>AI 自动出题，选择题 + 详解 + 弱点追踪</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.page_link("pages/04_Knowledge_Quiz.py", label="进入知识测验 →")
-
-st.divider()
-
-# 快速提问（智能路由）
-st.markdown("### ⚡ 快速提问")
 quick_q = st.text_input(
-    "输入你的问题，AI 会自动判断意图并跳转到合适功能...",
-    placeholder="试试：HashMap 原理？ / 帮我模拟面试 / 我要做题 / 什么是 Agent？",
+    "quick_input",
+    placeholder="输入任何问题，AI 自动识别意图并跳转 — 试试「HashMap 原理」或「帮我模拟面试」",
+    label_visibility="collapsed",
 )
+
 if quick_q:
     try:
         from src.agents.classifier import IntentClassifier
         classifier = IntentClassifier(mgr.llm)
         result = classifier.classify(quick_q)
-        intent = result.get("intent", "qa")
-        st.success(f"识别意图: **{intent}** → 正在跳转...")
+        page_map = {"qa": "pages/01_Knowledge_QA.py", "interview": "pages/02_Mock_Interview.py",
+                    "code": "pages/03_Code_Practice.py", "quiz": "pages/04_Knowledge_Quiz.py"}
+        st.switch_page(page_map.get(result.get("intent", "qa"), "pages/01_Knowledge_QA.py"))
+    except Exception:
+        pass
 
-        page_map = {
-            "qa": "pages/01_Knowledge_QA.py",
-            "interview": "pages/02_Mock_Interview.py",
-            "code": "pages/03_Code_Practice.py",
-            "quiz": "pages/04_Knowledge_Quiz.py",
-        }
-        target = page_map.get(intent, "pages/01_Knowledge_QA.py")
-        st.switch_page(target)
-    except Exception as e:
-        st.warning(f"路由暂不可用（{e}），请手动点击功能卡片。")
-
-st.divider()
-st.caption("💡 提示：在侧边栏切换模型后，点击「应用配置」生效。支持通义千问、DeepSeek、Anthropic Claude 及自定义 API。")
+st.html('<p style="text-align:center;color:#C7C7CC;font-size:0.8rem;margin-top:3rem">Made for learning · Not for production</p>')
