@@ -232,13 +232,30 @@ with col4:
 
 st.divider()
 
-# 快速提问
+# 快速提问（智能路由）
 st.markdown("### ⚡ 快速提问")
-quick_q = st.text_input("输入你的 LangChain 问题，我会自动判断并跳转到合适的功能页面...",
-                        placeholder="例如：什么是 LCEL？/ 帮我模拟一次 Agent 面试 / 给我一道 chain 练习题")
+quick_q = st.text_input(
+    "输入你的问题，AI 会自动判断意图并跳转到合适功能...",
+    placeholder="试试：HashMap 原理？ / 帮我模拟面试 / 我要做题 / 什么是 Agent？",
+)
 if quick_q:
-    # TODO: 在 Phase 7 中接入 Classifier Agent 进行智能路由
-    st.info("🏗️ 智能路由将在后续版本中启用。请点击上方功能卡片进入对应页面。")
+    try:
+        from src.agents.classifier import IntentClassifier
+        classifier = IntentClassifier(mgr.llm)
+        result = classifier.classify(quick_q)
+        intent = result.get("intent", "qa")
+        st.success(f"识别意图: **{intent}** → 正在跳转...")
+
+        page_map = {
+            "qa": "pages/01_Knowledge_QA.py",
+            "interview": "pages/02_Mock_Interview.py",
+            "code": "pages/03_Code_Practice.py",
+            "quiz": "pages/04_Knowledge_Quiz.py",
+        }
+        target = page_map.get(intent, "pages/01_Knowledge_QA.py")
+        st.switch_page(target)
+    except Exception as e:
+        st.warning(f"路由暂不可用（{e}），请手动点击功能卡片。")
 
 st.divider()
 st.caption("💡 提示：在侧边栏切换模型后，点击「应用配置」生效。支持通义千问、DeepSeek、Anthropic Claude 及自定义 API。")
