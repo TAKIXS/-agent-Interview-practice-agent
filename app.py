@@ -198,14 +198,13 @@ cards = [
 for col, (icon, title, desc, page) in zip(cols, cards):
     with col:
         st.html(f"""
-        <a href="{page}" style="text-decoration:none;color:inherit">
-        <div class="apple-card">
+        <div class="apple-card" style="margin-bottom:0.5rem">
             <div style="font-size:2rem;margin-bottom:0.75rem">{icon}</div>
             <div style="font-size:1.1rem;font-weight:600;color:#1D1D1F;margin-bottom:0.5rem">{title}</div>
-            <div style="font-size:0.9rem;color:#86868B;line-height:1.5;white-space:pre-line">{desc}</div>
+            <div style="font-size:0.9rem;color:#86868B;line-height:1.5;white-space:pre-line;margin-bottom:0.75rem">{desc}</div>
         </div>
-        </a>
         """)
+        st.page_link(page, label=f"进入{title} →")
 
 st.divider()
 
