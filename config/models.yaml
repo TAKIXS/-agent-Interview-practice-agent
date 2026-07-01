@@ -81,6 +81,6 @@ providers:
         required: true
 
 defaults:
-  provider: "qwen"
-  model: "qwen-plus-latest"
+  provider: "deepseek"
+  model: "deepseek-chat"
   temperature: 0.7

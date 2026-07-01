@@ -8,6 +8,7 @@
 """
 
 import os
+from pathlib import Path
 from typing import Protocol
 
 from langchain_core.embeddings import Embeddings
@@ -62,16 +63,21 @@ class EmbeddingProvider:
 
     def _create_huggingface(self) -> Embeddings:
         from langchain_huggingface import HuggingFaceEmbeddings
+        import os
         model_name = self.model or "sentence-transformers/all-MiniLM-L6-v2"
-        # 国内优先使用 hf-mirror.com 镜像
-        mirror_url = "https://hf-mirror.com"
+
+        # 如果本地缓存存在，使用离线模式避免 SSL 问题
+        cache_path = Path("./.hf_cache/models--sentence-transformers--all-MiniLM-L6-v2")
+        local_only = cache_path.exists()
+
         return HuggingFaceEmbeddings(
             model_name=model_name,
-            model_kwargs={"device": "cpu"},
+            model_kwargs={
+                "device": "cpu",
+                "local_files_only": local_only,
+            },
             encode_kwargs={"normalize_embeddings": True},
             cache_folder="./.hf_cache",
-            # 通过环境变量设置镜像
-            # export HF_ENDPOINT=https://hf-mirror.com
         )
 
     def _create_qwen(self) -> Embeddings:
