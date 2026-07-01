@@ -94,12 +94,23 @@ class InterviewGraph:
 
 请：
 1. 简短自我介绍并说明面试安排
-2. 直接提出第一道题
+2. 以"【第一题】"开头提出第一道题
 3. 只输出你的开场白+题目，不要自问自答"""
 
         resp = self._llm.invoke(prompt)
-        q = str(resp.content)
-        return {"messages": [AIMessage(content=q)], "questions_asked": [q]}
+        full_text = str(resp.content)
+
+        # 提取题目摘要（取"【第一题】"之后的内容，或最后200字）
+        q_summary = full_text
+        if "【第一题】" in full_text:
+            q_summary = full_text.split("【第一题】", 1)[1].strip()
+        elif "第一题" in full_text:
+            q_summary = full_text.split("第一题", 1)[1].strip()
+        # 截取前120字作为题目摘要
+        if len(q_summary) > 120:
+            q_summary = q_summary[:120] + "..."
+
+        return {"messages": [AIMessage(content=full_text)], "questions_asked": [q_summary]}
 
     def _evaluate(self, s: InterviewState) -> dict:
         questions = list(s.get("questions_asked", []))
@@ -185,13 +196,19 @@ class InterviewGraph:
         total = s.get("total_questions", 0)
         avg = sum(x.get("overall", 0) for x in scores) / len(scores) if scores else 0
 
-        qa = "\n".join(f"{i+1}. {q[:80]} | {sc.get('overall',0):.1f}分 | {sc.get('brief','')}" for i, (q, sc) in enumerate(zip(questions, scores)))
+        # 只取实际有分数的题目（对齐 questions 和 scores）
+        n = min(len(questions), len(scores))
+        qa = "\n".join(
+            f"{i+1}. {questions[i][:80]} | {scores[i].get('overall',0):.1f}分 | {scores[i].get('brief','')}"
+            for i in range(n)
+        )
 
         report = self._llm.invoke(f"""生成面试最终报告。
 
 主题：{s['topic']} | 难度：{s['difficulty']}
-均分：{avg:.1f}/10 | 题数：{total}
+均分：{avg:.1f}/10 | 总题数：{total}
 
+答题记录（{n}题）：
 {qa}
 
 用 Markdown 输出：1总体评价 2各题表现 3优势 4待提升 5学习建议""")
