@@ -204,7 +204,8 @@ for col, (icon, title, desc, page) in zip(cols, cards):
             <div style="font-size:0.9rem;color:#86868B;line-height:1.5;white-space:pre-line;margin-bottom:0.75rem">{desc}</div>
         </div>
         """)
-        st.page_link(page, label=f"进入{title} →")
+        if st.button(f"进入{title}", key=f"nav_{page}", use_container_width=True):
+            st.switch_page(page)
 
 st.divider()
 
