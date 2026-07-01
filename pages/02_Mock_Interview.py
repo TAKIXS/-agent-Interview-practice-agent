@@ -107,11 +107,26 @@ elif st.session_state.iv_phase == "active":
 
     if answer := st.chat_input("输入你的回答..."):
         st.session_state.iv_msgs.append({"role": "user", "content": answer})
+
+        # 记录消息数，避免追加旧消息导致重复
+        prev_count = len(st.session_state.iv_msgs)
+
         with st.spinner(""):
-            result = agent.answer(st.session_state.iv_thread, answer)
-        msgs = [m for m in result.get("messages", []) if hasattr(m, "content") and m.type == "ai"]
-        for m in msgs:
-            st.session_state.iv_msgs.append({"role": "assistant", "content": str(m.content)})
+            agent.answer(st.session_state.iv_thread, answer)
+            state = agent.get_state(st.session_state.iv_thread)
+
+        if state and state.values:
+            all_msgs = state.values.get("messages", [])
+            # 只取本次 invoke 新增的 AI 消息（反馈 + 下一题）
+            new_msgs = [m for m in all_msgs if hasattr(m, "content") and m.type == "ai"]
+            # 从最新消息中取尚未加入 iv_msgs 的
+            for m in new_msgs:
+                content = str(m.content)
+                # 去重检查：如果 iv_msgs 最后几条不包含此内容，才追加
+                existing = {x["content"] for x in st.session_state.iv_msgs}
+                if content not in existing:
+                    st.session_state.iv_msgs.append({"role": "assistant", "content": content})
+
         st.rerun()
 
 # --- Done ---
