@@ -82,20 +82,27 @@ h3 { font-size: 1.25rem !important; font-weight: 600 !important; color: #1D1D1F;
     color: #86868B;
 }
 
-/* 按钮 */
+/* 全局按钮 */
 .stButton > button {
-    background: #0071E3;
-    color: white;
+    background: #F5F5F7;
+    color: #0071E3;
     border: none;
-    border-radius: 12px;
-    padding: 0.6rem 1.5rem;
+    border-radius: 980px;
+    padding: 0.45rem 1.1rem;
     font-weight: 500;
-    font-size: 0.95rem;
+    font-size: 0.88rem;
     transition: all 0.15s ease;
 }
 .stButton > button:hover {
+    background: #E8E8ED;
+}
+/* 主要按钮 (type=primary) */
+.stButton > button[kind="primary"] {
+    background: #0071E3;
+    color: white;
+}
+.stButton > button[kind="primary"]:hover {
     background: #0077ED;
-    box-shadow: 0 2px 8px rgba(0,113,227,0.2);
 }
 
 /* 输入框 */
@@ -198,13 +205,13 @@ cards = [
 for col, (icon, title, desc, page) in zip(cols, cards):
     with col:
         st.html(f"""
-        <div class="apple-card" style="margin-bottom:0.5rem">
+        <div class="apple-card" style="display:flex;flex-direction:column;min-height:200px">
             <div style="font-size:2rem;margin-bottom:0.75rem">{icon}</div>
             <div style="font-size:1.1rem;font-weight:600;color:#1D1D1F;margin-bottom:0.5rem">{title}</div>
-            <div style="font-size:0.9rem;color:#86868B;line-height:1.5;white-space:pre-line;margin-bottom:0.75rem">{desc}</div>
+            <div style="font-size:0.9rem;color:#86868B;line-height:1.5;white-space:pre-line;flex:1">{desc}</div>
         </div>
         """)
-        if st.button(f"进入{title}", key=f"nav_{page}", use_container_width=True):
+        if st.button(f"{title}  →", key=f"nav_{page}"):
             st.switch_page(page)
 
 st.divider()
