@@ -26,16 +26,14 @@ h1 { font-size: 2rem !important; font-weight: 700 !important; color: #1D1D1F; }
 st.title("Q&A")
 st.html('<p style="color:#86868B;font-size:0.95rem;margin-bottom:1.5rem">基于知识库的智能问答 · Java 后端 + LangChain Agent</p>')
 
-# Agent
+# RAG 基础设施（缓存，与模型无关）
 @st.cache_resource
-def get_qa():
-    from src.llm.manager import ModelManager
+def get_rag():
     from src.rag.embeddings import EmbeddingProvider
     from src.rag.store import VectorStoreManager
     from src.rag.retriever import Retriever
     from src.conversation.manager import ConversationManager
     from src.memory.memory_context import build_memory_context
-    from src.agents.qa_agent import QAAgent
 
     provider = EmbeddingProvider(kind="huggingface")
     store = VectorStoreManager("./chroma_db", provider.get())
@@ -46,10 +44,21 @@ def get_qa():
         ctx = build_memory_context()
     except Exception:
         ctx = ""
-    agent = QAAgent(ModelManager().llm, retriever, cm.get_checkpointer(), ctx)
-    return agent, cm
+    return retriever, cm, ctx
 
-agent, cm = get_qa()
+retriever, cm, memory_ctx = get_rag()
+
+# QA Agent（按模型缓存，切换模型后自动重建）
+@st.cache_resource
+def get_qa_agent(provider: str, model: str):
+    from src.utils.session import get_shared_llm
+    from src.agents.qa_agent import QAAgent
+    return QAAgent(get_shared_llm(), retriever, cm.get_checkpointer(), memory_ctx)
+
+agent = get_qa_agent(
+    st.session_state.get("current_provider", ""),
+    st.session_state.get("current_model", ""),
+)
 
 # 初始化
 if "qa_thread" not in st.session_state or not st.session_state.qa_thread:

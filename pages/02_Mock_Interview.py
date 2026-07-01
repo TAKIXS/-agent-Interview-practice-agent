@@ -38,8 +38,8 @@ st.html('<p style="color:#86868B;font-size:0.95rem;margin-bottom:1.5rem">AI Èù¢Ë
 
 # Agent
 @st.cache_resource
-def get_interview():
-    from src.llm.manager import ModelManager
+def get_interview_agent(provider: str, model: str):
+    from src.utils.session import get_shared_llm
     from src.conversation.manager import ConversationManager
     from src.memory.memory_context import build_memory_context
     from src.agents.interview_agent import InterviewAgent
@@ -48,9 +48,12 @@ def get_interview():
         ctx = build_memory_context()
     except Exception:
         ctx = ""
-    return InterviewAgent(ModelManager().llm, cm.get_checkpointer(), ctx), cm
+    return InterviewAgent(get_shared_llm(), cm.get_checkpointer(), ctx), cm
 
-agent, cm = get_interview()
+agent, cm = get_interview_agent(
+    st.session_state.get("current_provider", ""),
+    st.session_state.get("current_model", ""),
+)
 
 # State
 for k in ["iv_phase", "iv_thread", "iv_msgs", "iv_cfg"]:

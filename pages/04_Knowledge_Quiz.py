@@ -29,8 +29,8 @@ st.html('<p style="color:#86868B;font-size:0.95rem;margin-bottom:1.5rem">AI è‡ªå
 
 # Agent
 @st.cache_resource
-def get_quiz():
-    from src.llm.manager import ModelManager
+def get_quiz_agent(provider: str, model: str):
+    from src.utils.session import get_shared_llm
     from src.conversation.manager import ConversationManager
     from src.memory.memory_context import build_memory_context
     from src.agents.quiz_agent import QuizAgent
@@ -39,9 +39,12 @@ def get_quiz():
         ctx = build_memory_context()
     except Exception:
         ctx = ""
-    return QuizAgent(ModelManager().llm, cm.get_checkpointer(), ctx), cm
+    return QuizAgent(get_shared_llm(), cm.get_checkpointer(), ctx), cm
 
-agent, cm = get_quiz()
+agent, cm = get_quiz_agent(
+    st.session_state.get("current_provider", ""),
+    st.session_state.get("current_model", ""),
+)
 
 for k in ["qz_phase", "qz_thread", "qz_msgs", "qz_cfg", "qz_choice"]:
     if k not in st.session_state:
