@@ -7,28 +7,19 @@ st.set_page_config(page_title="Q&A", page_icon="◈")
 from src.utils.session import init_session_state
 init_session_state()
 
-# 注入 CSS
+# CSS
 st.html("""
 <style>
 #MainMenu, footer, .stDeployButton { display: none; }
 h1 { font-size: 2rem !important; font-weight: 700 !important; color: #1D1D1F; }
-.chat-container { max-width: 800px; margin: 0 auto; }
 .stChatMessage { background: transparent !important; padding: 1rem 0; }
 .stChatMessage [data-testid="stChatMessageContent"] {
-    background: #F5F5F7;
-    border-radius: 14px;
-    padding: 1rem 1.25rem;
-    max-width: 85%;
+    background: #F5F5F7; border-radius: 14px; padding: 1rem 1.25rem; max-width: 85%;
 }
 .stChatMessage[data-testid="stChatMessage-user"] [data-testid="stChatMessageContent"] {
-    background: #0071E3;
-    color: white;
-    margin-left: auto;
+    background: #0071E3; color: white; margin-left: auto;
 }
-.stChatInput > div {
-    border-radius: 12px;
-    border: 1px solid #D1D1D6;
-}
+.stChatInput > div { border-radius: 12px; border: 1px solid #D1D1D6; }
 </style>
 """)
 
@@ -60,27 +51,28 @@ def get_qa():
 
 agent, cm = get_qa()
 
+# 初始化
 if "qa_thread" not in st.session_state or not st.session_state.qa_thread:
     st.session_state.qa_thread = cm.new_thread_id()
 if "qa_msgs" not in st.session_state:
     st.session_state.qa_msgs = []
 
-# 显示消息
-st.html('<div class="chat-container">')
+# 显示历史消息 — 直接循环，不用 HTML 包裹
 for msg in st.session_state.qa_msgs:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         if msg.get("sources"):
             with st.expander("来源"):
                 st.caption(msg["sources"][:500])
-st.html('</div>')
 
 # 输入
 if prompt := st.chat_input("提出问题..."):
+    # 用户消息
     st.session_state.qa_msgs.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # AI 回答
     with st.chat_message("assistant"):
         with st.spinner(""):
             result = agent.invoke(prompt, st.session_state.qa_thread)
@@ -90,15 +82,13 @@ if prompt := st.chat_input("提出问题..."):
             st.markdown(answer)
             sources = result.get("metadata", {}).get("retrieved_docs", "")
             st.session_state.qa_msgs.append({"role": "assistant", "content": answer, "sources": sources})
+    st.rerun()
 
 # 侧边栏
 with st.sidebar:
     st.markdown("**Q&A**")
+    st.caption(f"消息: {len(st.session_state.qa_msgs)}")
     if st.button("新建对话", use_container_width=True):
         st.session_state.qa_thread = cm.new_thread_id()
-        st.session_state.qa_msgs = []
-        st.rerun()
-    st.caption(f"消息: {len(st.session_state.qa_msgs)}")
-    if st.button("清空", use_container_width=True):
         st.session_state.qa_msgs = []
         st.rerun()
