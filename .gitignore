@@ -13,8 +13,9 @@ build/
 
 # 数据库
 chroma_db/
-user_data/app.db
 user_data/*.db
+user_data/*.db-shm
+user_data/*.db-wal
 
 # IDE
 .vscode/

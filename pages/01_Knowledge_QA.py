@@ -74,14 +74,18 @@ if prompt := st.chat_input("提出问题..."):
 
     # AI 回答
     with st.chat_message("assistant"):
-        with st.spinner(""):
-            result = agent.invoke(prompt, st.session_state.qa_thread)
-        answers = [m for m in result.get("messages", []) if hasattr(m, "content") and m.type == "ai"]
-        if answers:
-            answer = str(answers[-1].content)
-            st.markdown(answer)
-            sources = result.get("metadata", {}).get("retrieved_docs", "")
-            st.session_state.qa_msgs.append({"role": "assistant", "content": answer, "sources": sources})
+        try:
+            with st.spinner(""):
+                result = agent.invoke(prompt, st.session_state.qa_thread)
+            answers = [m for m in result.get("messages", []) if hasattr(m, "content") and m.type == "ai"]
+            if answers:
+                answer = str(answers[-1].content)
+                st.markdown(answer)
+                sources = result.get("metadata", {}).get("retrieved_docs", "")
+                st.session_state.qa_msgs.append({"role": "assistant", "content": answer, "sources": sources})
+        except Exception as e:
+            st.error(f"请求失败：{e}")
+            st.session_state.qa_msgs.append({"role": "assistant", "content": f"抱歉，请求出错了。请稍后重试。"})
     st.rerun()
 
 # 侧边栏

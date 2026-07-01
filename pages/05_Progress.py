@@ -1,43 +1,73 @@
-"""学习进度页面 — 长期记忆驱动的个人学习画像。
-
-功能：
-- 主题熟练度雷达图
-- 分数趋势折线图
-- 学习时长统计
-- 弱点分析 + 推荐学习路径
-"""
+"""学习进度 — Apple 极简风格。"""
 
 import streamlit as st
+from dotenv import load_dotenv; load_dotenv()
 
-st.title("📈 学习进度")
-st.markdown("基于长期记忆追踪你的学习轨迹，发现优势与薄弱点。")
+st.set_page_config(page_title="进度", page_icon="◈")
+from src.utils.session import init_session_state
+init_session_state()
 
-st.info("🏗️ 学习进度仪表盘将在 Phase 7 中实现。当前为框架占位。")
+st.html("""
+<style>
+#MainMenu, footer, .stDeployButton { display: none; }
+h1 { font-size: 2rem !important; font-weight: 700 !important; color: #1D1D1F; }
+.stButton > button { background: #F5F5F7; color: #0071E3; border: none; border-radius: 980px; }
+</style>
+""")
 
-# 布局占位
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("### 🎯 主题熟练度")
-    st.markdown("*雷达图将在此处渲染...*")
+st.title("进度")
+st.html('<p style="color:#86868B;font-size:0.95rem;margin-bottom:1.5rem">学习轨迹与成长记录</p>')
 
-with col2:
-    st.markdown("### 📈 分数趋势")
-    st.markdown("*趋势图将在此处渲染...*")
+try:
+    from src.memory.history_store import get_recent_sessions
+    from src.memory.proficiency_store import get_all_proficiencies, get_weak_topics
+    from src.memory.database import init_db
+    init_db()
 
-st.divider()
+    sessions = get_recent_sessions(50)
+    profs = get_all_proficiencies()
+    weak = get_weak_topics()
 
-col3, col4 = st.columns(2)
-with col3:
-    st.markdown("### ⏱️ 学习统计")
-    st.metric("总学习时长", "-- 小时")
-    st.metric("完成会话数", "0")
-    st.metric("累计答题数", "0")
+    # 统计
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("学习会话", str(len(sessions)))
+    with col2:
+        quiz_sessions = [s for s in sessions if s.get("session_type") == "quiz"]
+        interview_sessions = [s for s in sessions if s.get("session_type") == "interview"]
+        st.metric("面试", str(len(interview_sessions)))
+    with col3:
+        st.metric("测验", str(len(quiz_sessions)))
 
-with col4:
-    st.markdown("### 💡 建议学习路径")
-    st.markdown("*根据你的薄弱领域，这里将推荐学习内容...*")
+    # 熟练度
+    if profs:
+        st.divider()
+        st.markdown("### 主题熟练度")
+        for p in profs:
+            score = p.get("proficiency_score", 0)
+            topic = p.get("topic", "?")
+            st.progress(min(score / 10, 1.0), text=f"{topic}: {score:.1f}/10")
 
-# 侧边栏
-with st.sidebar:
-    st.markdown("### 📅 时间范围")
-    st.selectbox("查看", ["最近 7 天", "最近 30 天", "全部"], key="progress_range")
+    # 弱点提示
+    if weak:
+        st.divider()
+        st.markdown("### 需要加强")
+        for w in weak:
+            st.markdown(f"- **{w.get('topic','?')}**: {w.get('proficiency_score',0):.1f}/10")
+
+    # 最近活动
+    if sessions:
+        st.divider()
+        st.markdown("### 最近活动")
+        for s in sessions[:10]:
+            stype = {"interview": "面试", "quiz": "测验", "qa": "问答"}.get(s.get("session_type", ""), s.get("session_type", ""))
+            topic = s.get("topic", "")
+            score = s.get("score", 0)
+            date = str(s.get("started_at", ""))[:10] if s.get("started_at") else ""
+            st.markdown(f"- {date} {stype} {topic}: {score:.1f}/10")
+
+    if not sessions and not profs:
+        st.info("还没有学习记录。完成一次面试或测验后这里会有数据。")
+
+except Exception as e:
+    st.warning(f"数据加载失败: {e}")

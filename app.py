@@ -233,7 +233,7 @@ if quick_q:
         page_map = {"qa": "pages/01_Knowledge_QA.py", "interview": "pages/02_Mock_Interview.py",
                     "code": "pages/03_Code_Practice.py", "quiz": "pages/04_Knowledge_Quiz.py"}
         st.switch_page(page_map.get(result.get("intent", "qa"), "pages/01_Knowledge_QA.py"))
-    except Exception:
-        pass
+    except Exception as e:
+        st.warning(f"意图识别暂不可用：{e}")
 
 st.html('<p style="text-align:center;color:#C7C7CC;font-size:0.8rem;margin-top:3rem">Made for learning · Not for production</p>')

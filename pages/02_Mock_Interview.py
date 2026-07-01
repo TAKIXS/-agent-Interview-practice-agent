@@ -72,7 +72,11 @@ if st.session_state.iv_phase == "setup":
     if st.button("开始面试", type="primary", use_container_width=True):
         with st.spinner("准备中..."):
             tid = cm.new_thread_id()
-            result = agent.start(tid, topic, difficulty, count)
+            try:
+                result = agent.start(tid, topic, difficulty, count)
+            except Exception as e:
+                st.error(f"请求失败：{e}")
+                st.stop()
         msgs = [m for m in result.get("messages", []) if hasattr(m, "content") and m.type == "ai"]
         st.session_state.iv_thread = tid
         st.session_state.iv_cfg = {"topic": topic, "difficulty": difficulty, "count": count}
@@ -112,7 +116,11 @@ elif st.session_state.iv_phase == "active":
         prev_count = len(st.session_state.iv_msgs)
 
         with st.spinner(""):
-            agent.answer(st.session_state.iv_thread, answer)
+            try:
+                agent.answer(st.session_state.iv_thread, answer)
+            except Exception as e:
+                st.error(f"请求失败：{e}")
+                st.stop()
             state = agent.get_state(st.session_state.iv_thread)
 
         if state and state.values:
@@ -132,6 +140,28 @@ elif st.session_state.iv_phase == "active":
 # --- Done ---
 elif st.session_state.iv_phase == "done":
     st.success("面试完成")
+
+    # 持久化：记录面试成绩到长期记忆
+    if not st.session_state.get("iv_recorded"):
+        try:
+            from src.memory.history_store import record_session, complete_session
+            from src.memory.proficiency_store import update_proficiency
+            state = agent.get_state(st.session_state.iv_thread)
+            if state and state.values:
+                scores = state.values.get("scores", [])
+                topic = state.values.get("topic", "综合")
+                if scores:
+                    avg = sum(s.get("overall", 0) for s in scores) / len(scores)
+                    sid = record_session("interview", topic, state.values.get("difficulty", ""))
+                    complete_session(sid, avg, {"scores": scores})
+                    # 更新主题熟练度
+                    if "Java" in topic:
+                        update_proficiency("java", avg)
+                    if "Agent" in topic:
+                        update_proficiency("agent", avg)
+                st.session_state.iv_recorded = True
+        except Exception:
+            pass  # 记忆记录失败不阻塞 UI
     for msg in st.session_state.iv_msgs:
         with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
             st.markdown(msg["content"])

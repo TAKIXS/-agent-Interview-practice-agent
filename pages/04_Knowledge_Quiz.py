@@ -60,7 +60,11 @@ if st.session_state.qz_phase == "setup":
     if st.button("开始测验", type="primary", use_container_width=True):
         with st.spinner("AI 出题中..."):
             tid = cm.new_thread_id()
-            result = agent.start(tid, topic, difficulty, count)
+            try:
+                result = agent.start(tid, topic, difficulty, count)
+            except Exception as e:
+                st.error(f"请求失败：{e}")
+                st.stop()
         state = agent.get_state(tid)
         qs = state.values.get("questions", []) if state and state.values else []
         st.session_state.qz_thread = tid
@@ -117,7 +121,11 @@ elif st.session_state.qz_phase == "answering":
             st.session_state.qz_msgs.append({"role": "user", "content": f"选择: {choice}"})
 
             with st.spinner(""):
-                agent.answer(st.session_state.qz_thread, idx)
+                try:
+                    agent.answer(st.session_state.qz_thread, idx)
+                except Exception as e:
+                    st.error(f"请求失败：{e}")
+                    st.stop()
 
             state2 = agent.get_state(st.session_state.qz_thread)
             if state2 and state2.values:
@@ -133,6 +141,28 @@ elif st.session_state.qz_phase == "answering":
 # --- Done ---
 elif st.session_state.qz_phase == "done":
     st.success("测验完成")
+
+    # 持久化：记录测验成绩到长期记忆
+    if not st.session_state.get("qz_recorded"):
+        try:
+            from src.memory.history_store import record_session, complete_session
+            from src.memory.proficiency_store import update_proficiency
+            state = agent.get_state(st.session_state.qz_thread)
+            if state and state.values:
+                scores = state.values.get("scores", [])
+                topic = state.values.get("topic", "综合")
+                total = state.values.get("total_questions", 5)
+                correct = sum(scores)
+                pct = correct / total * 100 if total else 0
+                sid = record_session("quiz", topic, state.values.get("difficulty", ""))
+                complete_session(sid, pct / 10, {"correct": correct, "total": total})
+                if "Java" in topic:
+                    update_proficiency("java", pct / 10)
+                if "Agent" in topic:
+                    update_proficiency("agent", pct / 10)
+                st.session_state.qz_recorded = True
+        except Exception:
+            pass
     state = agent.get_state(st.session_state.qz_thread)
     if state and state.values:
         scores = state.values.get("scores", [])
