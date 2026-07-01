@@ -41,10 +41,17 @@ def get_quiz_agent(provider: str, model: str):
         ctx = ""
     return QuizAgent(get_shared_llm(), cm.get_checkpointer(), ctx), cm
 
-agent, cm = get_quiz_agent(
-    st.session_state.get("current_provider", ""),
-    st.session_state.get("current_model", ""),
-)
+_agent = None
+_cm = None
+
+def ensure_agent():
+    global _agent, _cm
+    if _agent is None:
+        _agent, _cm = get_quiz_agent(
+            st.session_state.get("current_provider", ""),
+            st.session_state.get("current_model", ""),
+        )
+    return _agent, _cm
 
 for k in ["qz_phase", "qz_thread", "qz_msgs", "qz_cfg", "qz_choice"]:
     if k not in st.session_state:
@@ -62,13 +69,13 @@ if st.session_state.qz_phase == "setup":
 
     if st.button("开始测验", type="primary", use_container_width=True):
         with st.spinner("AI 出题中..."):
-            tid = cm.new_thread_id()
+            tid = ensure_agent()[1].new_thread_id()
             try:
-                result = agent.start(tid, topic, difficulty, count)
+                result = ensure_agent()[0].start(tid, topic, difficulty, count)
             except Exception as e:
                 st.error(f"请求失败：{e}")
                 st.stop()
-        state = agent.get_state(tid)
+        state = ensure_agent()[0].get_state(tid)
         qs = state.values.get("questions", []) if state and state.values else []
         st.session_state.qz_thread = tid
         st.session_state.qz_cfg = {"topic": topic, "difficulty": difficulty, "count": count}
@@ -80,7 +87,7 @@ if st.session_state.qz_phase == "setup":
 
 # --- Answering ---
 elif st.session_state.qz_phase == "answering":
-    state = agent.get_state(st.session_state.qz_thread)
+    state = ensure_agent()[0].get_state(st.session_state.qz_thread)
     if not state or not state.values:
         st.error("状态丢失")
         st.stop()
@@ -125,12 +132,12 @@ elif st.session_state.qz_phase == "answering":
 
             with st.spinner(""):
                 try:
-                    agent.answer(st.session_state.qz_thread, idx)
+                    ensure_agent()[0].answer(st.session_state.qz_thread, idx)
                 except Exception as e:
                     st.error(f"请求失败：{e}")
                     st.stop()
 
-            state2 = agent.get_state(st.session_state.qz_thread)
+            state2 = ensure_agent()[0].get_state(st.session_state.qz_thread)
             if state2 and state2.values:
                 new_msgs = [m for m in state2.values.get("messages", [])[-3:]
                            if hasattr(m, "content") and m.type == "ai"]
@@ -150,7 +157,7 @@ elif st.session_state.qz_phase == "done":
         try:
             from src.memory.history_store import record_session, complete_session
             from src.memory.proficiency_store import update_proficiency
-            state = agent.get_state(st.session_state.qz_thread)
+            state = ensure_agent()[0].get_state(st.session_state.qz_thread)
             if state and state.values:
                 scores = state.values.get("scores", [])
                 topic = state.values.get("topic", "综合")
@@ -166,7 +173,7 @@ elif st.session_state.qz_phase == "done":
                 st.session_state.qz_recorded = True
         except Exception:
             pass
-    state = agent.get_state(st.session_state.qz_thread)
+    state = ensure_agent()[0].get_state(st.session_state.qz_thread)
     if state and state.values:
         scores = state.values.get("scores", [])
         total = state.values.get("total_questions", 5)

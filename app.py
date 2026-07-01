@@ -34,9 +34,8 @@ st.set_page_config(
 # ============================================================================
 st.html("""
 <style>
-/* 全局 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-* { font-family: 'Inter', -apple-system, sans-serif; }
+/* 全局 — 使用系统字体，秒渲染 */
+* { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
 
 /* 隐藏 Streamlit 默认元素 */
 #MainMenu, footer, .stDeployButton { display: none; }

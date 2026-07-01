@@ -50,10 +50,17 @@ def get_interview_agent(provider: str, model: str):
         ctx = ""
     return InterviewAgent(get_shared_llm(), cm.get_checkpointer(), ctx), cm
 
-agent, cm = get_interview_agent(
-    st.session_state.get("current_provider", ""),
-    st.session_state.get("current_model", ""),
-)
+_agent = None
+_cm = None
+
+def ensure_agent():
+    global _agent, _cm
+    if _agent is None:
+        _agent, _cm = get_interview_agent(
+            st.session_state.get("current_provider", ""),
+            st.session_state.get("current_model", ""),
+        )
+    return _agent, _cm
 
 # State
 for k in ["iv_phase", "iv_thread", "iv_msgs", "iv_cfg"]:
@@ -74,9 +81,9 @@ if st.session_state.iv_phase == "setup":
 
     if st.button("开始面试", type="primary", use_container_width=True):
         with st.spinner("准备中..."):
-            tid = cm.new_thread_id()
+            tid = ensure_agent()[1].new_thread_id()
             try:
-                result = agent.start(tid, topic, difficulty, count)
+                result = ensure_agent()[0].start(tid, topic, difficulty, count)
             except Exception as e:
                 st.error(f"请求失败：{e}")
                 st.stop()
@@ -96,7 +103,7 @@ elif st.session_state.iv_phase == "active":
         with st.chat_message(role):
             st.markdown(msg["content"])
 
-    state = agent.get_state(st.session_state.iv_thread)
+    state = ensure_agent()[0].get_state(st.session_state.iv_thread)
     complete = state.values.get("interview_complete", False) if state and state.values else False
 
     if complete:
@@ -120,11 +127,11 @@ elif st.session_state.iv_phase == "active":
 
         with st.spinner(""):
             try:
-                agent.answer(st.session_state.iv_thread, answer)
+                ensure_agent()[0].answer(st.session_state.iv_thread, answer)
             except Exception as e:
                 st.error(f"请求失败：{e}")
                 st.stop()
-            state = agent.get_state(st.session_state.iv_thread)
+            state = ensure_agent()[0].get_state(st.session_state.iv_thread)
 
         if state and state.values:
             all_msgs = state.values.get("messages", [])
@@ -149,7 +156,7 @@ elif st.session_state.iv_phase == "done":
         try:
             from src.memory.history_store import record_session, complete_session
             from src.memory.proficiency_store import update_proficiency
-            state = agent.get_state(st.session_state.iv_thread)
+            state = ensure_agent()[0].get_state(st.session_state.iv_thread)
             if state and state.values:
                 scores = state.values.get("scores", [])
                 topic = state.values.get("topic", "综合")
