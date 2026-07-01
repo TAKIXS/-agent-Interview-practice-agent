@@ -134,7 +134,7 @@ hr {
 # 侧边栏
 # ============================================================================
 with st.sidebar:
-    st.markdown("## 模型")
+    st.markdown("## 模型配置")
     providers = mgr.list_providers()
     provider_names = [p["name"] for p in providers]
     provider_keys = [p["key"] for p in providers]
@@ -144,7 +144,7 @@ with st.sidebar:
     except ValueError:
         idx = 0
 
-    selected_name = st.selectbox("Provider", provider_names, index=idx, label_visibility="collapsed")
+    selected_name = st.selectbox("服务商", provider_names, index=idx, label_visibility="collapsed")
     selected_key = provider_keys[provider_names.index(selected_name)]
     st.session_state.current_provider = selected_key
 
@@ -154,15 +154,15 @@ with st.sidebar:
             model_names = [m["name"] for m in models]
             model_ids = [m["id"] for m in models]
             st.session_state.current_model = model_ids[model_names.index(
-                st.selectbox("Model", model_names, index=0, label_visibility="collapsed")
+                st.selectbox("模型", model_names, index=0, label_visibility="collapsed")
             )]
 
     st.divider()
 
-    # API Key 状态
+    st.markdown("## 密钥状态")
     keys = {
         "DeepSeek": bool(os.getenv("DEEPSEEK_API_KEY")),
-        "千问": bool(os.getenv("DASHSCOPE_API_KEY")),
+        "通义千问": bool(os.getenv("DASHSCOPE_API_KEY")),
     }
     for name, ok in keys.items():
         st.markdown(f"{'●' if ok else '○'} {name}")
@@ -189,10 +189,10 @@ st.html(
 cols = st.columns(4)
 
 cards = [
-    ("Q&A", "知识问答", "基于 RAG 的智能问答\n覆盖 Java + Agent", "pages/01_Knowledge_QA.py"),
-    ("Interview", "模拟面试", "AI 面试官出题\n专业打分与反馈", "pages/02_Mock_Interview.py"),
-    ("Code", "代码实战", "在线编写与执行\nAI 代码评审", "pages/03_Code_Practice.py"),
-    ("Quiz", "知识测验", "自动出题\n逐题评分与报告", "pages/04_Knowledge_Quiz.py"),
+    ("问答", "知识问答", "基于 RAG 的智能问答\n覆盖 Java + Agent", "pages/01_Knowledge_QA.py"),
+    ("面试", "模拟面试", "AI 面试官出题\n专业打分与反馈", "pages/02_Mock_Interview.py"),
+    ("练习", "代码实战", "在线编写与执行\nAI 代码评审", "pages/03_Code_Practice.py"),
+    ("测验", "知识测验", "自动出题\n逐题评分与报告", "pages/04_Knowledge_Quiz.py"),
 ]
 
 for col, (icon, title, desc, page) in zip(cols, cards):
@@ -210,7 +210,7 @@ for col, (icon, title, desc, page) in zip(cols, cards):
 st.divider()
 
 # 快捷输入
-st.html('<p style="font-size:0.85rem;font-weight:600;color:#86868B;letter-spacing:0.04em;margin-bottom:0.5rem">QUICK START</p>')
+st.html('<p style="font-size:0.85rem;font-weight:600;color:#86868B;letter-spacing:0.04em;margin-bottom:0.5rem">快捷入口</p>')
 
 quick_q = st.text_input(
     "quick_input",
