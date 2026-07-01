@@ -1,14 +1,8 @@
-"""InterviewGraph — 模拟面试 LangGraph 状态机。
+"""InterviewGraph — 模拟面试 LangGraph 状态机（简化版）。
 
-与 Streamlit 交互模式适配（每次用户回答触发一次 invoke）：
-
-首次 invoke（启动）：
-  setup -> ask_first_question -> END
-
-后续 invoke（用户回答）：
-  evaluate -> feedback -> conditional ->
-      ask_next_question -> END（继续面试）
-      final_report -> END（面试结束）
+流程：
+  首次:  setup -> ask_first -> END
+  答题:  evaluate -> conditional -> ask_next -> END (or final -> END)
 """
 
 from __future__ import annotations
@@ -17,308 +11,189 @@ import json
 from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
-
 from src.state.schemas import InterviewState
 
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
-
-SETUP_PROMPT = """你是一位资深技术面试官。请开始面试。
-
-## 配置
-- 主题：{topic}
-- 难度：{difficulty}
-- 总题数：{total_questions}
-
-## 面试官行为
-1. 自我介绍，说明面试安排（主题、题数）
-2. 直接提出第一道题，难度与配置匹配
-3. 每次只问一道题，等待回答
-4. 用中文
-
-只输出你的面试开场白 + 第一道题。"""
-
-EVALUATE_FEEDBACK_PROMPT = """你是一位严格的面试评估专家。请对以下回答进行打分和反馈。
-
-## 题目
-{question}
-
-## 面试者回答
-{answer}
-
-## 请完成两个任务：
-
-### 第一步：评分（JSON格式）
-```json
-{{
-    "technical_accuracy": 8.0,
-    "depth": 7.5,
-    "clarity": 9.0,
-    "examples": 7.0,
-    "overall": 7.9,
-    "strengths": ["优点1"],
-    "improvements": ["改进1"],
-    "brief": "简短评语"
-}}
-```
-
-### 第二步：反馈（直接文本）
-给面试者的建设性反馈（100字内）：先肯定亮点，再指出改进方向。
-
-### 第三步：下一题或结束
-(如果是最后一题，标记 interview_complete=true 并给出结束语)
-
-请先输出 JSON 评分（在 ```json 代码块中），再输出反馈文本。"""
-
-
-# ---------------------------------------------------------------------------
-# 主类
-# ---------------------------------------------------------------------------
 
 class InterviewGraph:
-    """模拟面试 LangGraph 图。"""
+    """模拟面试图。"""
 
     def __init__(self, llm: BaseChatModel, checkpointer, memory_context: str = "") -> None:
         self._llm = llm
-        self._memory_context = memory_context
+        self._memory = memory_context
         self._graph = self._build().compile(checkpointer=checkpointer)
 
-    # ------------------------------------------------------------------
-    # API
-    # ------------------------------------------------------------------
-
     def start(self, thread_id: str, topic: str, difficulty: str, total: int) -> dict:
-        """开始面试。返回面试官开场白 + 第一道题。"""
         config = {"configurable": {"thread_id": thread_id}}
-        setup_data = json.dumps({
-            "topic": topic, "difficulty": difficulty, "total_questions": total,
-            "action": "start",
-        }, ensure_ascii=False)
-        return self._graph.invoke(
-            {"messages": [HumanMessage(content=setup_data)]},
-            config=config,
-        )
+        data = json.dumps({"topic": topic, "difficulty": difficulty, "total_questions": total, "action": "start"}, ensure_ascii=False)
+        return self._graph.invoke({"messages": [HumanMessage(content=data)]}, config=config)
 
     def answer(self, thread_id: str, user_answer: str) -> dict:
-        """提交回答。返回评分 + 反馈 + 下一题（或最终报告）。"""
         config = {"configurable": {"thread_id": thread_id}}
-        return self._graph.invoke(
-            {"messages": [HumanMessage(content=user_answer)]},
-            config=config,
-        )
+        return self._graph.invoke({"messages": [HumanMessage(content=user_answer)]}, config=config)
 
     def get_state(self, thread_id: str):
         return self._graph.get_state({"configurable": {"thread_id": thread_id}})
 
-    # ------------------------------------------------------------------
-    # 图构建
-    # ------------------------------------------------------------------
+    # -- 构建 --
 
     def _build(self) -> StateGraph:
         g = StateGraph(InterviewState)
-
         g.add_node("setup", self._setup)
         g.add_node("ask_first", self._ask_first)
-        g.add_node("evaluate_feedback", self._evaluate_feedback)
-        g.add_node("final_report", self._final_report)
-
-        # 路由节点
+        g.add_node("evaluate", self._evaluate)
+        g.add_node("ask_next", self._ask_next)
+        g.add_node("final", self._final)
         g.add_node("router", lambda s: {})
 
         g.set_entry_point("router")
-        g.add_conditional_edges("router", self._route, {
-            "setup": "setup",
-            "evaluate": "evaluate_feedback",
-            "end": END,
-        })
-
+        g.add_conditional_edges("router", self._route, {"setup": "setup", "evaluate": "evaluate", "end": END})
         g.add_edge("setup", "ask_first")
         g.add_edge("ask_first", END)
-
-        g.add_conditional_edges("evaluate_feedback", self._after_eval, {
-            "final": "final_report",
-            "end": END,
-        })
-        g.add_edge("final_report", END)
-
+        g.add_conditional_edges("evaluate", self._after_eval, {"ask": "ask_next", "final": "final", "end": END})
+        g.add_edge("ask_next", END)
+        g.add_edge("final", END)
         return g
 
-    # ------------------------------------------------------------------
-    # 路由
-    # ------------------------------------------------------------------
-
-    def _route(self, state: InterviewState) -> Literal["setup", "evaluate", "end"]:
-        total = state.get("total_questions", 0)
-        current = state.get("current_question_index", 0)
-        complete = state.get("interview_complete", False)
-
-        if complete:
+    def _route(self, s: InterviewState) -> Literal["setup", "evaluate", "end"]:
+        if s.get("interview_complete"):
             return "end"
-        if total == 0:
+        if s.get("total_questions", 0) == 0:
             return "setup"
-        if current >= total:
-            return "end"
         return "evaluate"
 
-    def _after_eval(self, state: InterviewState) -> Literal["final", "end"]:
-        total = state.get("total_questions", 0)
-        current = state.get("current_question_index", 0)
+    def _after_eval(self, s: InterviewState) -> Literal["ask", "final", "end"]:
+        total = s.get("total_questions", 0)
+        current = s.get("current_question_index", 0)
+        if s.get("interview_complete"):
+            return "end"
         if current >= total:
             return "final"
-        return "end"
+        return "ask"
 
-    # ------------------------------------------------------------------
-    # 节点
-    # ------------------------------------------------------------------
+    # -- 节点 --
 
-    def _setup(self, state: InterviewState) -> dict:
-        """解析配置，初始化。"""
-        msgs = state["messages"]
-        config_str = ""
-        for m in reversed(msgs):
+    def _setup(self, s: InterviewState) -> dict:
+        for m in reversed(s["messages"]):
             if isinstance(m, HumanMessage):
-                config_str = str(m.content)
-                break
-        try:
-            cfg = json.loads(config_str)
-        except json.JSONDecodeError:
-            cfg = {"topic": "Java + Agent", "difficulty": "中级", "total_questions": 5}
+                try:
+                    cfg = json.loads(str(m.content))
+                    return {"topic": cfg["topic"], "difficulty": cfg["difficulty"], "total_questions": cfg["total_questions"], "current_question_index": 0, "questions_asked": [], "user_answers": [], "scores": [], "interview_complete": False}
+                except json.JSONDecodeError:
+                    pass
+        return {"topic": "综合", "difficulty": "中级", "total_questions": 5, "current_question_index": 0, "questions_asked": [], "user_answers": [], "scores": [], "interview_complete": False}
 
-        return {
-            "topic": cfg["topic"],
-            "difficulty": cfg["difficulty"],
-            "total_questions": cfg["total_questions"],
-            "current_question_index": 0,
-            "questions_asked": [],
-            "user_answers": [],
-            "scores": [],
-            "interview_complete": False,
-        }
+    def _ask_first(self, s: InterviewState) -> dict:
+        prompt = f"""你是一位资深技术面试官。
 
-    def _ask_first(self, state: InterviewState) -> dict:
-        """生成面试开场白 + 第一道题。"""
-        prompt = SETUP_PROMPT.format(
-            topic=state["topic"],
-            difficulty=state["difficulty"],
-            total_questions=state["total_questions"],
-        )
+面试主题：{s['topic']}
+难度：{s['difficulty']}
+总题数：{s['total_questions']}
+
+请：
+1. 简短自我介绍并说明面试安排
+2. 直接提出第一道题
+3. 只输出你的开场白+题目，不要自问自答"""
+
         resp = self._llm.invoke(prompt)
-        content = str(resp.content)
+        q = str(resp.content)
+        return {"messages": [AIMessage(content=q)], "questions_asked": [q]}
 
-        # 提取第一道题到 questions_asked
-        return {
-            "messages": [AIMessage(content=content)],
-            "questions_asked": [content],
-        }
+    def _evaluate(self, s: InterviewState) -> dict:
+        questions = list(s.get("questions_asked", []))
+        answers = list(s.get("user_answers", []))
+        scores = list(s.get("scores", []))
+        current_q = questions[-1] if questions else ""
 
-    def _evaluate_feedback(self, state: InterviewState) -> dict:
-        """评估回答 + 生成反馈 + 下一题。"""
-        questions = list(state.get("questions_asked", []))
-        answers = list(state.get("user_answers", []))
-        scores = list(state.get("scores", []))
-        current = state.get("current_question_index", 0)
-        total = state.get("total_questions", 5)
-        topic = state.get("topic", "综合")
-
-        # 找到最新用户回答
-        latest_answer = ""
-        for m in reversed(state["messages"]):
+        # 找最新用户回答
+        latest_a = ""
+        for m in reversed(s["messages"]):
             if isinstance(m, HumanMessage):
-                content = str(m.content)
-                if "action" not in content:  # 跳过配置消息
-                    latest_answer = content
+                txt = str(m.content)
+                if "action" not in txt and not txt.startswith("{"):
+                    latest_a = txt
                     break
 
-        if not latest_answer or not questions:
-            return {}
+        answers.append(latest_a)
 
-        current_q = questions[-1]
-        answers.append(latest_answer)
+        # 评分
+        eval_prompt = f"""你是面试评估专家。对以下回答评分。
 
-        # LLM 评分+反馈+下一题
-        prompt = EVALUATE_FEEDBACK_PROMPT.format(question=current_q, answer=latest_answer)
-        resp = self._llm.invoke(prompt)
-        resp_text = str(resp.content)
+题目：{current_q}
+回答：{latest_a}
 
-        # 解析 JSON 评分
-        score = {
-            "technical_accuracy": 7.0, "depth": 7.0, "clarity": 7.0,
-            "examples": 7.0, "overall": 7.0,
-            "strengths": [], "improvements": [], "brief": "",
-        }
+输出 JSON（只输出 JSON，不要其他）：
+{{"technical_accuracy":8.0,"depth":7.5,"clarity":9.0,"examples":7.0,"overall":7.9,"strengths":["亮点1"],"improvements":["改进1"],"brief":"简短评语(30字)"}}"""
+
+        resp = self._llm.invoke(eval_prompt)
         try:
-            if "```json" in resp_text:
-                json_str = resp_text.split("```json")[1].split("```")[0]
-                score = json.loads(json_str)
+            txt = str(resp.content)
+            if "```" in txt:
+                txt = txt.split("```")[1]
+                if txt.startswith("json"):
+                    txt = txt[4:]
+            score = json.loads(txt)
         except (json.JSONDecodeError, IndexError):
-            pass
+            score = {"technical_accuracy": 7, "depth": 7, "clarity": 7, "examples": 7, "overall": 7, "strengths": [], "improvements": [], "brief": ""}
 
         scores.append(score)
+        new_idx = len(answers)  # 已经回答了的问题数
 
-        # 下一题（如果还有）
-        new_idx = current + 1
-        new_messages = [AIMessage(content=resp_text)]
+        # 生成简洁反馈
+        fb_prompt = f"""给面试者简短反馈（80字内）。先肯定亮点，再指出改进方向。
 
-        if new_idx < total:
-            # 生成下一道题
-            next_prompt = f"""上一题 {current_q}
-面试者回答 {latest_answer[:200]}
-得分 {score.get('overall',0):.1f}/10
+题目：{current_q}
+得分：{score.get('overall',0):.1f}/10
+优点：{','.join(score.get('strengths',[]))}
+改进：{','.join(score.get('improvements',[]))}"""
 
-请提出第{new_idx+1}道面试题。
-主题：{topic}，难度：{state['difficulty']}
-与已问题目不重复，逐步加深。
-只输出题目。"""
-            next_resp = self._llm.invoke(next_prompt)
-            next_q = str(next_resp.content)
-            questions.append(next_q)
-            new_messages.append(AIMessage(content=next_q))
+        fb = self._llm.invoke(fb_prompt)
+        fb_text = f"**得分 {score.get('overall',0):.1f}/10**\n\n{str(fb.content)}"
 
-        return {
-            "messages": new_messages,
-            "user_answers": answers,
-            "scores": scores,
-            "questions_asked": questions,
-            "current_question_index": new_idx,
-        }
+        return {"user_answers": answers, "scores": scores, "current_question_index": new_idx, "messages": [AIMessage(content=fb_text)]}
 
-    def _final_report(self, state: InterviewState) -> dict:
-        """生成最终面试报告。"""
-        questions = state.get("questions_asked", [])
-        scores = state.get("scores", [])
-        topic = state.get("topic", "综合")
-        total = state.get("total_questions", 0)
+    def _ask_next(self, s: InterviewState) -> dict:
+        questions = list(s.get("questions_asked", []))
+        total = s.get("total_questions", 5)
+        current = s.get("current_question_index", 0)
 
-        if scores:
-            avg = sum(s.get("overall", 0) for s in scores) / len(scores)
-        else:
-            avg = 0
+        prev_qs = "\n".join(f"第{i+1}题: {q[:100]}" for i, q in enumerate(questions))
 
-        qa_list = []
-        for i, (q, s) in enumerate(zip(questions, scores)):
-            qa_list.append(f"第{i+1}题 | {s.get('overall',0):.1f}分 | {s.get('brief','')}")
+        prompt = f"""你是面试官。出第{current+1}题（共{total}题）。
 
-        report_prompt = f"""生成面试最终报告。
+主题：{s['topic']}  难度：{s['difficulty']}
 
-主题：{topic} | 难度：{state['difficulty']} | 总题数：{total} | 均分：{avg:.1f}/10
+已问题目：
+{prev_qs}
 
-答题记录：
-{chr(10).join(qa_list)}
+要求：
+- 与已问题目不重复
+- 逐步加深难度
+- 只输出题目本身，一行标题+一行题目描述"""
 
-用 Markdown 输出：
-1. 总体评价
-2. 各题表现
-3. 优势领域
-4. 待提升
-5. 学习建议"""
+        resp = self._llm.invoke(prompt)
+        next_q = str(resp.content)
+        questions.append(next_q)
 
-        resp = self._llm.invoke(report_prompt)
+        return {"questions_asked": questions, "messages": [AIMessage(content=f"**第{current+1}/{total}题**\n\n{next_q}")]}
 
-        return {
-            "interview_complete": True,
-            "messages": [AIMessage(content=str(resp.content))],
-        }
+    def _final(self, s: InterviewState) -> dict:
+        questions = s.get("questions_asked", [])
+        scores = s.get("scores", [])
+        total = s.get("total_questions", 0)
+        avg = sum(x.get("overall", 0) for x in scores) / len(scores) if scores else 0
+
+        qa = "\n".join(f"{i+1}. {q[:80]} | {sc.get('overall',0):.1f}分 | {sc.get('brief','')}" for i, (q, sc) in enumerate(zip(questions, scores)))
+
+        report = self._llm.invoke(f"""生成面试最终报告。
+
+主题：{s['topic']} | 难度：{s['difficulty']}
+均分：{avg:.1f}/10 | 题数：{total}
+
+{qa}
+
+用 Markdown 输出：1总体评价 2各题表现 3优势 4待提升 5学习建议""")
+
+        return {"interview_complete": True, "messages": [AIMessage(content=str(report.content))]}
