@@ -1,6 +1,7 @@
 """模拟面试 — Apple 极简风格。"""
 
 import streamlit as st
+from dotenv import load_dotenv; load_dotenv()
 
 st.set_page_config(page_title="Interview", page_icon="◈")
 from src.utils.session import init_session_state

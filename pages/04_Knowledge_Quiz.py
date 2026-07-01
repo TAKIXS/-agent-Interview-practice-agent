@@ -1,6 +1,7 @@
 """知识测验 — Apple 极简风格。"""
 
 import streamlit as st
+from dotenv import load_dotenv; load_dotenv()
 
 st.set_page_config(page_title="Quiz", page_icon="◈")
 from src.utils.session import init_session_state
